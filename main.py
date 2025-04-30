@@ -1,17 +1,18 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-import openai, os
+from openai import OpenAI
+import os
 from dotenv import load_dotenv
 
 # Load API key
 load_dotenv()
-openai.api_key = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Initialize FastAPI app
 app = FastAPI()
 
-# Enable CORS for frontend access
+# Enable CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,17 +25,17 @@ app.add_middleware(
 class DocumentInput(BaseModel):
     text: str
 
-# Root route (for basic health check)
+# Root health check
 @app.get("/")
 def read_root():
     return {"message": "Backend is live"}
 
-# Test route (to verify input works)
+# Echo test route
 @app.post("/test")
 async def test_input(input: DocumentInput):
     return {"echo": input.text}
 
-# Main route for issue spotting
+# Legal issue spotting route
 @app.post("/spot_issues")
 async def spot_issues(input: DocumentInput):
     try:
@@ -50,7 +51,7 @@ Identify all legal issues or causes of action raised in the document below.
 Document:
 {input.text}
 """
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are a skilled litigation attorney."},
@@ -59,6 +60,7 @@ Document:
             temperature=0.3,
             max_tokens=700
         )
-        return {"issues": response['choices'][0]['message']['content']}
+        return {"issues": response.choices[0].message.content}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"OpenAI error: {str(e)}")

@@ -4,22 +4,37 @@ from fastapi.middleware.cors import CORSMiddleware
 import openai, os
 from dotenv import load_dotenv
 
+# Load API key
 load_dotenv()
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
+# Initialize FastAPI app
 app = FastAPI()
 
+# Enable CORS for frontend access
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow frontend access
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Define input model
 class DocumentInput(BaseModel):
     text: str
 
+# Root route (for basic health check)
+@app.get("/")
+def read_root():
+    return {"message": "Backend is live"}
+
+# Test route (to verify input works)
+@app.post("/test")
+async def test_input(input: DocumentInput):
+    return {"echo": input.text}
+
+# Main route for issue spotting
 @app.post("/spot_issues")
 async def spot_issues(input: DocumentInput):
     try:
@@ -46,4 +61,4 @@ Document:
         )
         return {"issues": response['choices'][0]['message']['content']}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"OpenAI error: {str(e)}")

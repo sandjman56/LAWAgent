@@ -46,7 +46,7 @@
       const outputArea = document.getElementById('outputArea');
       outputArea.textContent = "Analyzing...";
 
-      const response = await fetch('http://0.0.0.0:9000/spot_issues', {
+      const response = await fetch('https://lawagent-backend.onrender.com/spot_issues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text: inputText })

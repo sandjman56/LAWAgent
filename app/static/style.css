@@ -1,0 +1,60 @@
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background-color: var(--bg-base, #080b14);
+  position: relative;
+  min-height: 100vh;
+  opacity: 0;
+  animation: bodyFadeIn 1.8s ease forwards;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    120deg,
+    rgba(20, 30, 60, 0.9),
+    rgba(44, 54, 94, 0.9),
+    rgba(82, 46, 116, 0.9),
+    rgba(32, 104, 126, 0.9)
+  );
+  background-size: 400% 400%;
+  animation: gradientShift 28s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes bodyFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body {
+    animation: none;
+    opacity: 1;
+  }
+
+  body::before {
+    animation: none;
+  }
+}

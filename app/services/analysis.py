@@ -1,14 +1,25 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any, Dict
 
-from openai import AsyncOpenAI, OpenAIError
+from openai import (
+    APIConnectionError,
+    APIStatusError,
+    AsyncOpenAI,
+    AuthenticationError,
+    BadRequestError,
+    OpenAIError,
+    RateLimitError,
+)
 
 from app.config import settings
 
-_MODEL = "gpt-4o-mini"
+logger = logging.getLogger("lawagent.ai")
+
+_MODEL = settings.openai_model
 _MAX_CHARS = 60000
 
 _client = AsyncOpenAI(api_key=settings.openai_api_key)
@@ -130,9 +141,31 @@ async def analyze_text(
             model=_MODEL,
             messages=messages,
             temperature=0.2,
+            timeout=60,
         )
+    except AuthenticationError as exc:  # pragma: no cover - network error handling
+        logger.exception("Authentication failed while calling OpenAI.")
+        raise ValueError("Authentication with the AI provider failed. Check your API key.") from exc
+    except RateLimitError as exc:  # pragma: no cover - network error handling
+        logger.exception("Rate limit hit while calling OpenAI.")
+        raise ValueError("Rate limit reached. Please try again later.") from exc
+    except APIConnectionError as exc:  # pragma: no cover - network error handling
+        logger.exception("Network error while connecting to OpenAI.")
+        raise ValueError("Network error: could not reach the AI service.") from exc
+    except APIStatusError as exc:  # pragma: no cover - network error handling
+        status = getattr(exc, "status_code", None)
+        logger.exception("OpenAI returned an error status (status=%s).", status)
+        if status == 404:
+            raise ValueError("Requested model not available. Check the OPENAI_MODEL setting.") from exc
+        if status and 500 <= status < 600:
+            raise ValueError("AI provider server error. Try again later.") from exc
+        raise ValueError("AI request failed. Verify the model and inputs.") from exc
+    except BadRequestError as exc:  # pragma: no cover - network error handling
+        logger.exception("Bad request sent to OpenAI.")
+        raise ValueError("AI request was invalid (too large or malformed).") from exc
     except OpenAIError as exc:  # pragma: no cover - network error handling
-        raise ValueError("The AI service is temporarily unavailable. Please try again later.") from exc
+        logger.exception("Unexpected OpenAI error.")
+        raise ValueError("The AI service is temporarily unavailable. Try again later.") from exc
 
     content = completion.choices[0].message.content if completion.choices else ""
     content = content or ""

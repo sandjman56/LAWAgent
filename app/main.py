@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.routers import issue_spotter
+from app.routers import health, issue_spotter
 
 app = FastAPI(title="LAWAgent")
 
@@ -20,4 +20,5 @@ app.add_middleware(
 )
 
 app.include_router(issue_spotter.router, prefix="/api/issue-spotter", tags=["Issue Spotter"])
+app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.mount("/", StaticFiles(directory="app/static", html=True), name="static")

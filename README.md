@@ -42,6 +42,7 @@ Settings are loaded from `.env` via `app/config.py`.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `OPENAI_API_KEY` | ✅ | — | API key used to call OpenAI chat completions. |
+| `OPENAI_MODEL` | ❌ | `gpt-4o-mini` | Chat Completions model used for analysis and health checks. |
 | `MAX_FILE_MB` | ❌ | `15` | Maximum allowed upload size in megabytes. |
 | `MAX_PAGES` | ❌ | `100` | Maximum number of PDF pages processed. |
 | `ALLOWED_ORIGINS` | ❌ | — | Optional comma-separated list of additional CORS origins. |
@@ -97,11 +98,29 @@ curl -X POST \
 
 `raw_json` is included when the request asks for JSON output. The Issue Spotter frontend renders summary, findings, citations, and allows downloading the JSON payload.
 
+### AI health check
+
+The backend exposes `/api/health/ai` to verify that the OpenAI integration is working and to surface actionable diagnostics.
+
+```bash
+curl http://127.0.0.1:8000/api/health/ai
+```
+
+Responses:
+
+* `{ "ok": true, "model": "gpt-4o-mini", "usage": { ... } }` — the configured model responded successfully.
+* `{ "ok": false, "reason": "missing key" }` — the `OPENAI_API_KEY` is not configured.
+* `{ "ok": false, "reason": "..." }` — the raw error from OpenAI (invalid key, bad model, rate limit, etc.).
+
+The health check uses the same model specified by `OPENAI_MODEL`, helping diagnose configuration issues quickly.
+
+When an AI request fails, the server logs capture detailed exception information (authentication errors, missing models, rate limits, and network issues) and the API returns user-friendly guidance instead of a generic failure message.
+
 ## Frontend experience
 
 * Dark, glassmorphic theme with accessible focus states and support for `prefers-reduced-motion`.
 * Inputs for document upload or pasted text, required instructions, optional analysis style, and JSON toggle.
-* Progress indicator, structured result tabs (Summary, Findings, Citations, Raw JSON), copy/download utilities, and inline error messaging.
+* Progress indicator, structured result tabs (Summary, Findings, Citations, Raw JSON), copy/download utilities, and inline error messaging with detailed guidance (e.g., invalid key, model missing, rate limit).
 
 ## Running tests
 

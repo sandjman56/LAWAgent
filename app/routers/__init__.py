@@ -1,3 +1,3 @@
-from . import analyze, uploads
+from . import issue_spotter
 
-__all__ = ["analyze", "uploads"]
+__all__ = ["issue_spotter"]

@@ -1,88 +1,108 @@
-# Legal Issue Spotter Backend
+# LAWAgent
 
-This FastAPI service powers the PDF upload, extraction, chunking, and issue spotting pipeline for the legal excerpt analyzer. It supports secure PDF ingestion, asynchronous text processing, chunk-based analysis, and a stubbed LLM workflow that can be swapped for a production provider.
+LAWAgent is a modern legal analysis workspace that combines a high-tech frontend with a FastAPI backend. The Issue Spotter workflow surfaces risks, findings, and citations from uploaded documents or pasted text using OpenAI models.
 
-## Quick start
+## Project layout
+
+```
+app/
+  main.py            # FastAPI application entry point
+  config.py          # Pydantic settings loaded from the repo-level .env
+  routers/
+    issue_spotter.py # Upload/text endpoints for the Issue Spotter workflow
+  services/
+    analysis.py      # OpenAI orchestration and response shaping
+  utils/
+    extract.py       # PDF/DOC/DOCX text extraction helpers
+  static/            # Frontend assets served at /
+```
+
+`main.py` mounts `app/static` so the site is available at `http://127.0.0.1:8000/` with `index.html` as a landing page and `issue-spotter.html` as the functional experience.
+
+## Prerequisites
+
+* Python 3.11+
+* An OpenAI API key stored in the repository root `.env` file (`OPENAI_API_KEY=...`)
+
+Install dependencies and start the development server:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-
-export AUTH_TOKEN="super-secret-token"
-export FRONTEND_ORIGIN="http://localhost:3000"
 uvicorn app.main:app --reload
 ```
 
-By default, files and derived text are stored under `./data/uploads`. The SQLite database lives at `./data/app.db`.
+Visit [http://127.0.0.1:8000/](http://127.0.0.1:8000/) for the landing page and Issue Spotter UI.
 
-## Environment variables
+## Configuration
+
+Settings are loaded from `.env` via `app/config.py`.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AUTH_TOKEN` | ✅ | — | Bearer token expected in `Authorization: Bearer <token>` header. |
-| `FRONTEND_ORIGIN` | ✅ | — | Allowed CORS origin for the frontend. |
-| `DATA_DIR` | ❌ | `./data/uploads` | Root directory for upload storage. |
-| `DATABASE_URL` | ❌ | `sqlite:///./data/app.db` | SQLModel database URL. Use a Postgres URL for production. |
-| `MAX_UPLOAD_MB` | ❌ | `20` | Maximum upload size in megabytes. |
-| `MAX_PAGES` | ❌ | `500` | Maximum number of PDF pages accepted. |
-| `LLM_PROVIDER` | ❌ | — | Set to `openai` to enable live OpenAI calls (requires API key). |
-| `OPENAI_API_KEY` | ❌ | — | API key used when `LLM_PROVIDER=openai`. |
+| `OPENAI_API_KEY` | ✅ | — | API key used to call OpenAI chat completions. |
+| `MAX_FILE_MB` | ❌ | `15` | Maximum allowed upload size in megabytes. |
+| `MAX_PAGES` | ❌ | `100` | Maximum number of PDF pages processed. |
+| `ALLOWED_ORIGINS` | ❌ | — | Optional comma-separated list of additional CORS origins. |
 
-## API walkthrough
+## API reference
 
-### 1. Upload a PDF
+Both endpoints live under `/api/issue-spotter` and return structured analysis payloads.
+
+### Upload a document
 
 ```bash
 curl -X POST \
-  -H "Authorization: Bearer super-secret-token" \
   -F "file=@/path/to/document.pdf" \
-  -F "notes=Initial complaint" \
-  http://localhost:8000/api/uploads
+  -F "instructions=Summarize potential litigation risks." \
+  -F "style=Checklist with citations" \
+  -F "return_json=true" \
+  http://127.0.0.1:8000/api/issue-spotter/upload
 ```
 
-Response:
+### Analyze pasted text
+
+```bash
+curl -X POST \
+  -H "Content-Type: application/json" \
+  -d '{
+        "text": "Lorem ipsum...",
+        "instructions": "Highlight issues in the financing documents.",
+        "style": "Detailed memo",
+        "return_json": true
+      }' \
+  http://127.0.0.1:8000/api/issue-spotter/text
+```
+
+### Response schema
 
 ```json
 {
-  "upload_id": "<uuid>",
-  "filename": "document.pdf",
-  "size_bytes": 1048576,
-  "pages": 42,
-  "status": "uploaded"
+  "summary": "High-level synthesis of the document",
+  "findings": [
+    {
+      "issue": "Issue title",
+      "risk": "Risk description",
+      "suggestion": "Suggested mitigation",
+      "span": {"page": 3, "start": 120, "end": 180}
+    }
+  ],
+  "citations": [
+    {"page": 3, "snippet": "Quoted language"}
+  ],
+  "raw_json": {"original": "Model response"}
 }
 ```
 
-### 2. Check upload status
+`raw_json` is included when the request asks for JSON output. The Issue Spotter frontend renders summary, findings, citations, and allows downloading the JSON payload.
 
-```bash
-curl -H "Authorization: Bearer super-secret-token" \
-  http://localhost:8000/api/uploads/<upload_id>/status
-```
+## Frontend experience
 
-### 3. Trigger analysis
+* Dark, glassmorphic theme with accessible focus states and support for `prefers-reduced-motion`.
+* Inputs for document upload or pasted text, required instructions, optional analysis style, and JSON toggle.
+* Progress indicator, structured result tabs (Summary, Findings, Citations, Raw JSON), copy/download utilities, and inline error messaging.
 
-```bash
-curl -X POST \
-  -H "Authorization: Bearer super-secret-token" \
-  -H "Content-Type: application/json" \
-  -d '{"prompt": "Focus on defenses"}' \
-  http://localhost:8000/api/analyze/<upload_id>
-```
+## Running tests
 
-### 4. Poll analysis status and fetch results
-
-```bash
-curl -H "Authorization: Bearer super-secret-token" \
-  http://localhost:8000/api/analyze/<analysis_id>/status
-
-curl -H "Authorization: Bearer super-secret-token" \
-  http://localhost:8000/api/analyze/<analysis_id>/result
-```
-
-## Notes
-
-* Uploads are rate-limited to 30 requests per minute per IP using `slowapi`.
-* PDF extraction prefers `pypdf` and falls back to `pdfminer.six` when needed. Extracted text is stored alongside the original document.
-* The default LLM pipeline returns deterministic stub data so the API functions without external credentials. Provide `LLM_PROVIDER=openai` and `OPENAI_API_KEY` to use OpenAI's Chat Completions API instead.
-* File deletions mark the upload as errored with `deleted by user` and remove the associated files from disk.
+No automated test suite is bundled. After making changes, ensure linting or manual validation as needed and run the API locally with `uvicorn app.main:app --reload`.

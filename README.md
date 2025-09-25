@@ -60,7 +60,9 @@ Settings are loaded from `.env` via `app/config.py`.
 
 ## Witness Finder setup
 
-1. Generate API keys:
+Render already supplies the required environment variables (`OPENAI_API_KEY`, `OPENAI_MODEL`, `PERPLEXITY_API_KEY`, and `PERPLEXITY_MODEL`). When running locally, create a `.env` file with the same values or export them in your shell.
+
+1. Generate API keys (skip if you already have them configured in Render):
    * Create a Perplexity developer key from the [Perplexity dashboard](https://www.perplexity.ai).
    * Create an OpenAI API key with access to both chat and embedding models.
 2. Copy `.env.example` to `.env` and fill in the placeholders:
@@ -79,7 +81,7 @@ Settings are loaded from `.env` via `app/config.py`.
    uvicorn app.main:app --reload
    ```
 
-4. Navigate to [http://127.0.0.1:8000/witness_finder](http://127.0.0.1:8000/witness_finder) to use the Witness Finder UI.
+4. Visit [http://127.0.0.1:8000/witness_finder](http://127.0.0.1:8000/witness_finder) for the frontend workflow. A direct GET to `/witness_finder` with an API client returns `{ "service": "witness_finder", "hint": "Use /api/witness_finder/search for POST" }` to guide callers toward the API surface.
 
 ### Witness Finder API endpoints
 
@@ -87,6 +89,7 @@ All routes are available under `/api/witness_finder`:
 
 | Method & Path | Description |
 |---------------|-------------|
+| `GET /` | Returns the hint payload for developers who hit the base route. |
 | `POST /search` | Run Perplexity search, summarize with OpenAI, and return ranked candidates. |
 | `POST /save` | Persist a candidate to the local JSON store. |
 | `GET /saved` | Retrieve all saved candidates. |

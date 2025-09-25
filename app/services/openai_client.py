@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any, Dict, List
 
 import numpy as np
@@ -15,166 +16,110 @@ from openai import (
     RateLimitError,
 )
 
-from app.config import settings
-
 logger = logging.getLogger("lawagent.openai")
 
-_chat_client = AsyncOpenAI(api_key=settings.openai_api_key)
-_embed_model = settings.openai_embeddings_model
+_API_KEY = os.getenv("OPENAI_API_KEY")
+_CHAT_MODEL = os.getenv("OPENAI_MODEL") or "gpt-4o-mini"
+_EMBED_MODEL = "text-embedding-3-large"
+_CLIENT: AsyncOpenAI | None = AsyncOpenAI(api_key=_API_KEY) if _API_KEY else None
+
+logger.info("OpenAI chat model set to %s", _CHAT_MODEL)
 
 _SYSTEM_PROMPT = (
-    "You are a legal research assistant compiling potential expert witnesses. "
-    "Extract people with relevant expertise and produce strictly valid JSON in the schema provided. "
-    "Deduplicate names. Include a sources array citing the URLs used."
+    "You are a legal research assistant compiling potential expert witnesses from noisy web results. "
+    "Produce STRICT JSON: "
+    "[{name, title, organization, sector, years_experience, location, summary, skills[], emails[], links[], "
+    "sources:[{url, snippet}], confidence:low|medium|high, match_strength: 0..100}] "
+    "Deduplicate people. Do not include text outside JSON."
 )
-
-_SCHEMA_INSTRUCTIONS = {
-    "type": "array",
-    "items": {
-        "type": "object",
-        "properties": {
-            "id": {"type": "string"},
-            "name": {"type": "string"},
-            "title": {"type": "string"},
-            "organization": {"type": "string"},
-            "sector": {"type": "string"},
-            "years_experience": {"type": "number"},
-            "location": {"type": "string"},
-            "summary": {"type": "string"},
-            "skills": {"type": "array", "items": {"type": "string"}},
-            "emails": {"type": "array", "items": {"type": "string"}},
-            "links": {"type": "array", "items": {"type": "string"}},
-            "sources": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string"},
-                        "snippet": {"type": "string"},
-                    },
-                    "required": ["url"],
-                },
-            },
-            "confidence": {"type": "string", "enum": ["low", "medium", "high"]},
-            "match_strength": {"type": "number"},
-        },
-        "required": ["name", "summary", "sources"],
-    },
-}
 
 
 def _build_messages(web_hits: List[Dict[str, Any]], user_context: Dict[str, Any]) -> List[Dict[str, str]]:
     payload = {
-        "user_query": user_context,
+        "user_context": user_context,
         "web_hits": web_hits,
-        "instructions": {
-            "task": "Transform the web hits into expert witness candidate profiles.",
-            "requirements": [
-                "Estimate years_experience when unspecified; prefer conservative estimates.",
-                "Return confidence as low, medium, or high.",
-                "Include canonical profile links in links when available.",
-                "Provide match_strength as an integer 0-100 indicating relevance.",
-            ],
-        },
-        "output_schema": _SCHEMA_INSTRUCTIONS,
     }
     return [
         {"role": "system", "content": _SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": json.dumps(payload, ensure_ascii=False),
-        },
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
     ]
 
 
-def _extract_json(content: str) -> List[Dict[str, Any]] | None:
+def _parse_candidates(content: str) -> List[Dict[str, Any]] | None:
     try:
-        data = json.loads(content)
+        parsed = json.loads(content)
     except json.JSONDecodeError:
-        pass
-    else:
-        if isinstance(data, list):
-            return data
-
-    start = content.find("[")
-    end = content.rfind("]")
-    if start != -1 and end != -1 and end > start:
-        try:
-            data = json.loads(content[start : end + 1])
-        except json.JSONDecodeError:
-            return None
-        if isinstance(data, list):
-            return data
+        return None
+    if isinstance(parsed, list):
+        return parsed
     return None
 
 
 async def summarize_to_candidates(
     web_hits: List[Dict[str, Any]], user_context: Dict[str, Any]
 ) -> List[Dict[str, Any]]:
-    if not settings.openai_api_key:
+    if not _CLIENT or not _API_KEY:
         raise ValueError("OPENAI_API_KEY is not configured.")
 
     messages = _build_messages(web_hits, user_context)
 
     for attempt in range(2):
         try:
-            completion = await _chat_client.chat.completions.create(
-                model=settings.openai_model,
+            response = await _CLIENT.chat.completions.create(
+                model=_CHAT_MODEL,
                 messages=messages,
-                temperature=0.2,
-                timeout=30,
+                temperature=0.1,
+                timeout=40,
             )
         except AuthenticationError as exc:  # pragma: no cover - network
-            logger.exception("OpenAI authentication failed.")
+            logger.error("OpenAI authentication failed: %s", exc)
             raise ValueError("OpenAI authentication failed. Check OPENAI_API_KEY.") from exc
         except RateLimitError as exc:  # pragma: no cover - network
-            logger.warning("OpenAI rate limit hit: %s", exc)
+            logger.warning("OpenAI rate limit reached: %s", exc)
             raise ValueError("OpenAI rate limit reached. Try again shortly.") from exc
         except (APIConnectionError, APIStatusError, BadRequestError, OpenAIError) as exc:  # pragma: no cover - network
-            logger.exception("OpenAI error while summarizing candidates: %s", exc)
+            logger.error("OpenAI error while summarizing candidates: %s", exc)
             raise ValueError("Unable to summarize candidates from OpenAI.") from exc
 
-        content = completion.choices[0].message.content if completion.choices else ""
+        content = response.choices[0].message.content if response.choices else ""
         if not content:
             continue
 
-        parsed = _extract_json(content)
+        parsed = _parse_candidates(content)
         if parsed is not None:
             return parsed
 
         messages.append(
             {
                 "role": "system",
-                "content": "The previous output was invalid JSON. Respond with JSON only, no prose.",
+                "content": "The previous response was invalid JSON. Respond with JSON only.",
             }
         )
 
-    logger.error("Failed to obtain valid JSON candidate list from OpenAI.")
-    return []
+    raise ValueError("OpenAI did not return valid candidate JSON.")
 
 
 async def embed_texts(texts: List[str]) -> np.ndarray:
-    if not settings.openai_api_key:
+    if not _CLIENT or not _API_KEY:
         raise ValueError("OPENAI_API_KEY is not configured.")
 
     if not texts:
         return np.zeros((0, 0))
 
     try:
-        result = await _chat_client.embeddings.create(model=_embed_model, input=texts, timeout=30)
+        result = await _CLIENT.embeddings.create(model=_EMBED_MODEL, input=texts, timeout=40)
     except AuthenticationError as exc:  # pragma: no cover - network
-        logger.exception("OpenAI authentication failed for embeddings.")
+        logger.error("OpenAI authentication failed for embeddings: %s", exc)
         raise ValueError("OpenAI authentication failed. Check OPENAI_API_KEY.") from exc
     except RateLimitError as exc:  # pragma: no cover - network
-        logger.warning("OpenAI embedding rate limit hit: %s", exc)
+        logger.warning("OpenAI embedding rate limit reached: %s", exc)
         raise ValueError("OpenAI rate limit reached while computing embeddings.") from exc
     except (APIConnectionError, APIStatusError, BadRequestError, OpenAIError) as exc:  # pragma: no cover - network
-        logger.exception("OpenAI error while embedding texts: %s", exc)
+        logger.error("OpenAI error while computing embeddings: %s", exc)
         raise ValueError("Unable to compute embeddings.") from exc
 
-    vectors = [item.embedding for item in result.data]
-    if not vectors:
+    embeddings = [item.embedding for item in result.data]
+    if not embeddings:
         return np.zeros((0, 0))
 
-    array = np.array(vectors, dtype=float)
-    return array
+    return np.asarray(embeddings, dtype=float)

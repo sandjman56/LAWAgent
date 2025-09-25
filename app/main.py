@@ -1,9 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from app.config import settings
-from app.routers import health, issue_spotter
+from app.routers import health, issue_spotter, witness_finder
 
 app = FastAPI(title="LAWAgent")
 
@@ -20,5 +21,11 @@ app.add_middleware(
 )
 
 app.include_router(issue_spotter.router, prefix="/api/issue-spotter", tags=["Issue Spotter"])
+app.include_router(witness_finder.router, prefix="/api/witness_finder", tags=["Witness Finder"])
 app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.mount("/", StaticFiles(directory="app/static", html=True), name="static")
+
+
+@app.get("/witness_finder", include_in_schema=False)
+async def witness_finder_page() -> FileResponse:
+    return FileResponse("app/static/witness-finder.html")

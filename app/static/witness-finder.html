@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LAWAgent Witness Finder</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/css/main.css" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="assets/css/witness-finder.css" />
+  </head>
+  <body class="page-witness-finder">
+    <header class="site-header">
+      <div class="container flex between align-center">
+        <a class="brand" href="/">
+          <img src="assets/img/logo.svg" alt="LAWAgent" class="brand-logo" />
+          <span class="brand-name">LAWAgent</span>
+        </a>
+        <nav aria-label="Primary navigation">
+          <ul class="nav-list">
+            <li><a class="nav-link" href="/">Home</a></li>
+            <li><a class="nav-link" href="/issue-spotter.html">Issue Spotter</a></li>
+            <li><a class="nav-link active" href="/witness_finder">Witness Finder</a></li>
+          </ul>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="page-heading">
+        <div class="container">
+          <h1>Witness Finder</h1>
+          <p class="subtitle">
+            Source, rank, and save expert witnesses with real-time web intelligence and AI curation.
+          </p>
+        </div>
+      </section>
+
+      <section class="container grid responsive-gap witness-layout">
+        <div class="card input-card" role="region" aria-labelledby="wf-form-heading">
+          <div class="card-header">
+            <h2 id="wf-form-heading">Search criteria</h2>
+            <p>Describe the matter and we will identify expert witness candidates with citations.</p>
+          </div>
+          <form id="witnessFinderForm" class="card-body" novalidate>
+            <div class="field-group">
+              <label for="industryInput">Industry / Sector <span aria-hidden="true">*</span></label>
+              <input
+                type="text"
+                id="industryInput"
+                name="industry"
+                required
+                placeholder="e.g., Pharmaceuticals, Fintech, Energy"
+              />
+            </div>
+            <div class="field-group">
+              <label for="descriptionInput">Description of need <span aria-hidden="true">*</span></label>
+              <textarea
+                id="descriptionInput"
+                name="description"
+                rows="6"
+                required
+                placeholder="Describe the dispute, product, or technical issues requiring testimony"
+              ></textarea>
+            </div>
+            <div class="field-group">
+              <label for="nameInput">Name hint (optional)</label>
+              <input type="text" id="nameInput" name="name" placeholder="Known expert or organization" />
+            </div>
+
+            <div class="form-actions">
+              <button class="btn primary" type="submit" id="wfSubmitBtn">
+                <span class="btn-label">Find witnesses</span>
+                <span class="btn-progress" aria-hidden="true"></span>
+              </button>
+            </div>
+            <p class="form-error" role="alert" aria-live="polite" hidden></p>
+          </form>
+
+          <div class="loading-state" id="wfLoading" hidden aria-live="polite">
+            <div class="loading-background"></div>
+            <div class="loading-content">
+              <p class="loading-title">Scanning knowledge corridors…</p>
+              <p class="loading-meta"><span id="wfProgress">0%</span> · ETA <span id="wfEta">06</span>s</p>
+              <div class="loading-bar">
+                <div class="loading-bar-progress" id="wfProgressBar"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card results-card" role="region" aria-labelledby="wf-results-heading">
+          <div class="card-header">
+            <h2 id="wf-results-heading">Results</h2>
+            <p class="results-status" id="wfResultsStatus" aria-live="polite">Awaiting search.</p>
+          </div>
+          <div class="card-body">
+            <section class="filters" aria-label="Result filters">
+              <div class="filter-group">
+                <label for="filterSimilarity">Min similarity</label>
+                <input type="range" id="filterSimilarity" min="0" max="100" value="0" />
+                <span class="filter-value" data-filter-display="similarity">0%</span>
+              </div>
+              <div class="filter-group">
+                <label for="filterExperience">Min years experience</label>
+                <input type="range" id="filterExperience" min="0" max="40" value="0" />
+                <span class="filter-value" data-filter-display="experience">0</span>
+              </div>
+              <div class="filter-group">
+                <label for="filterSector">Sector filter</label>
+                <input type="text" id="filterSector" placeholder="Any" />
+              </div>
+              <div class="filter-group">
+                <label for="filterLocation">Location filter</label>
+                <input type="text" id="filterLocation" placeholder="Any" />
+              </div>
+            </section>
+
+            <div id="wfResults" class="results-grid" aria-live="polite"></div>
+
+            <div class="empty-state" id="wfEmpty" hidden>
+              <p>No candidates match the current filters. Adjust the sliders or run a new search.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="container saved-section" aria-labelledby="wf-saved-heading">
+        <header class="saved-header">
+          <div>
+            <h2 id="wf-saved-heading">Saved witnesses</h2>
+            <p class="subtitle">Persisted locally for quick recall across sessions.</p>
+          </div>
+          <button class="btn ghost" id="wfToggleSaved" aria-expanded="false" aria-controls="wfSavedList">
+            Show saved
+          </button>
+        </header>
+        <div id="wfSavedList" class="saved-list" hidden aria-live="polite"></div>
+        <div class="empty-state" id="wfSavedEmpty" hidden>
+          <p>No saved witnesses yet. Save candidates to build your roster.</p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container">
+        <p>© <span data-year></span> LAWAgent. Precision witness intelligence for modern legal teams.</p>
+      </div>
+    </footer>
+
+    <div class="toast-container" role="status" aria-live="polite"></div>
+
+    <script src="assets/js/ui.js" defer></script>
+    <script src="assets/js/witness-finder.js" defer></script>
+  </body>
+</html>

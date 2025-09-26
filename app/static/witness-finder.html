@@ -49,23 +49,23 @@
           </div>
           <form id="witnessFinderForm" class="card-body" novalidate>
             <div class="field-group">
-              <label for="industryInput">Industry / Sector <span aria-hidden="true">*</span></label>
+              <label for="sectorInput">Sector <span aria-hidden="true">*</span></label>
               <input
                 type="text"
-                id="industryInput"
-                name="industry"
+                id="sectorInput"
+                name="sector"
                 required
-                placeholder="e.g., Pharmaceuticals, Fintech, Energy"
+                placeholder="e.g., Healthcare, Financial Services, Energy"
               />
             </div>
             <div class="field-group">
-              <label for="descriptionInput">Description of need <span aria-hidden="true">*</span></label>
+              <label for="descriptionInput">Description <span aria-hidden="true">*</span></label>
               <textarea
                 id="descriptionInput"
                 name="description"
                 rows="6"
                 required
-                placeholder="Describe the dispute, product, or technical issues requiring testimony"
+                placeholder="Describe the legal matter or expertise needed"
               ></textarea>
             </div>
             <div class="field-group">
@@ -100,49 +100,12 @@
             <p class="results-status" id="wfResultsStatus" aria-live="polite">Awaiting search.</p>
           </div>
           <div class="card-body">
-            <section class="filters" aria-label="Result filters">
-              <div class="filter-group">
-                <label for="filterSimilarity">Min similarity</label>
-                <input type="range" id="filterSimilarity" min="0" max="100" value="0" />
-                <span class="filter-value" data-filter-display="similarity">0%</span>
-              </div>
-              <div class="filter-group">
-                <label for="filterExperience">Min years experience</label>
-                <input type="range" id="filterExperience" min="0" max="40" value="0" />
-                <span class="filter-value" data-filter-display="experience">0</span>
-              </div>
-              <div class="filter-group">
-                <label for="filterSector">Sector filter</label>
-                <input type="text" id="filterSector" placeholder="Any" />
-              </div>
-              <div class="filter-group">
-                <label for="filterLocation">Location filter</label>
-                <input type="text" id="filterLocation" placeholder="Any" />
-              </div>
-            </section>
-
+            <article class="witness-summary" id="wfSummary" hidden></article>
             <div id="wfResults" class="results-grid" aria-live="polite"></div>
-
             <div class="empty-state" id="wfEmpty" hidden>
-              <p>No candidates match the current filters. Adjust the sliders or run a new search.</p>
+              <p>No results found. Try refining your query.</p>
             </div>
           </div>
-        </div>
-      </section>
-
-      <section class="container saved-section" aria-labelledby="wf-saved-heading">
-        <header class="saved-header">
-          <div>
-            <h2 id="wf-saved-heading">Saved witnesses</h2>
-            <p class="subtitle">Persisted locally for quick recall across sessions.</p>
-          </div>
-          <button class="btn ghost" id="wfToggleSaved" aria-expanded="false" aria-controls="wfSavedList">
-            Show saved
-          </button>
-        </header>
-        <div id="wfSavedList" class="saved-list" hidden aria-live="polite"></div>
-        <div class="empty-state" id="wfSavedEmpty" hidden>
-          <p>No saved witnesses yet. Save candidates to build your roster.</p>
         </div>
       </section>
     </main>
@@ -156,6 +119,174 @@
     <div class="toast-container" role="status" aria-live="polite"></div>
 
     <script src="assets/js/ui.js" defer></script>
-    <script src="assets/js/witness-finder.js" defer></script>
+    <script>
+      (function () {
+        const form = document.getElementById('witnessFinderForm');
+        const loading = document.getElementById('wfLoading');
+        const progressText = document.getElementById('wfProgress');
+        const etaText = document.getElementById('wfEta');
+        const progressBar = document.getElementById('wfProgressBar');
+        const statusEl = document.getElementById('wfResultsStatus');
+        const summaryEl = document.getElementById('wfSummary');
+        const resultsEl = document.getElementById('wfResults');
+        const emptyEl = document.getElementById('wfEmpty');
+        const errorEl = form.querySelector('.form-error');
+
+        let loadingInterval = null;
+
+        function updateStatus(message) {
+          if (statusEl) {
+            statusEl.textContent = message;
+          }
+        }
+
+        function resetResults() {
+          summaryEl.textContent = '';
+          summaryEl.hidden = true;
+          resultsEl.innerHTML = '';
+          emptyEl.hidden = true;
+        }
+
+        function startLoading() {
+          loading.hidden = false;
+          let progress = 0;
+          progressText.textContent = '0%';
+          etaText.textContent = '06';
+          progressBar.style.width = '0%';
+
+          loadingInterval = window.setInterval(() => {
+            progress = Math.min(progress + Math.random() * 12, 95);
+            progressText.textContent = `${Math.round(progress)}%`;
+            progressBar.style.width = `${Math.round(progress)}%`;
+            const eta = Math.max(1, Math.ceil((100 - progress) / 15)).toString().padStart(2, '0');
+            etaText.textContent = eta;
+          }, 400);
+        }
+
+        function stopLoading() {
+          if (loadingInterval) {
+            window.clearInterval(loadingInterval);
+            loadingInterval = null;
+          }
+          progressText.textContent = '100%';
+          progressBar.style.width = '100%';
+          etaText.textContent = '00';
+          window.setTimeout(() => {
+            loading.hidden = true;
+            progressBar.style.width = '0%';
+          }, 300);
+        }
+
+        async function fetchWitnesses(payload) {
+          const response = await fetch('/api/ask-witness', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            const detail = errorData.detail || 'Unable to fetch witness data.';
+            throw new Error(detail);
+          }
+
+          return response.json();
+        }
+
+        function renderSummary(summary) {
+          if (!summary) {
+            summaryEl.textContent = '';
+            summaryEl.hidden = true;
+            return;
+          }
+          summaryEl.textContent = summary;
+          summaryEl.hidden = false;
+        }
+
+        function renderResults(results) {
+          resultsEl.innerHTML = '';
+          if (!Array.isArray(results) || results.length === 0) {
+            emptyEl.hidden = false;
+            return;
+          }
+
+          emptyEl.hidden = true;
+          results.forEach((result) => {
+            const card = document.createElement('article');
+            card.className = 'witness-card';
+
+            const header = document.createElement('div');
+            header.className = 'witness-card-header';
+
+            const titleLink = document.createElement('a');
+            titleLink.className = 'nav-link';
+            titleLink.href = result.url || '#';
+            titleLink.target = '_blank';
+            titleLink.rel = 'noopener noreferrer';
+            titleLink.textContent = result.title || 'View source';
+            header.appendChild(titleLink);
+
+            if (typeof result.similarity === 'number' && !Number.isNaN(result.similarity)) {
+              const score = document.createElement('span');
+              score.className = 'witness-score';
+              score.textContent = `${result.similarity.toFixed(2)}`;
+              header.appendChild(score);
+            }
+
+            const snippet = document.createElement('p');
+            snippet.className = 'witness-summary';
+            snippet.textContent = result.snippet || 'No summary provided for this source.';
+
+            card.appendChild(header);
+            card.appendChild(snippet);
+            resultsEl.appendChild(card);
+          });
+        }
+
+        form.addEventListener('submit', async (event) => {
+          event.preventDefault();
+          errorEl.hidden = true;
+          errorEl.textContent = '';
+
+          const formData = new FormData(form);
+          const sector = (formData.get('sector') || '').toString().trim();
+          const description = (formData.get('description') || '').toString().trim();
+          const name = (formData.get('name') || '').toString().trim();
+
+          if (!sector || !description) {
+            errorEl.textContent = 'Sector and description are required.';
+            errorEl.hidden = false;
+            return;
+          }
+
+          resetResults();
+          updateStatus('Querying Perplexity for expert witnesses…');
+          startLoading();
+
+          try {
+            const payload = { sector, description, name };
+            if (!name) {
+              delete payload.name;
+            }
+            const data = await fetchWitnesses(payload);
+            renderSummary(data.summary || '');
+            renderResults(data.results || []);
+            if (!data.summary && (!data.results || data.results.length === 0)) {
+              emptyEl.hidden = false;
+            }
+            updateStatus('Search complete.');
+          } catch (error) {
+            resetResults();
+            emptyEl.hidden = false;
+            updateStatus('No results found. Try refining your query.');
+            const message = error instanceof Error ? error.message : 'Unable to complete the request.';
+            errorEl.textContent = message;
+            errorEl.hidden = false;
+          } finally {
+            stopLoading();
+          }
+        });
+      })();
+    </script>
   </body>
 </html>

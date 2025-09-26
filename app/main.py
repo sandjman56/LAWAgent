@@ -134,42 +134,39 @@ def _call_perplexity(query: WitnessQuery) -> Dict[str, Any]:
 
 
 def _format_perplexity_response(payload: Dict[str, Any]) -> Dict[str, Any]:
-    choices = payload.get("choices") if isinstance(payload, dict) else None
+    """Normalize the Perplexity API payload into the contract required by the UI."""
+
     summary = ""
     results: List[Dict[str, Any]] = []
+    citations_candidates: List[Any] = []
 
-    if isinstance(choices, list) and choices:
-        message = choices[0] or {}
-        if isinstance(message, dict):
-            content = message.get("message") if "message" in message else message
-            if isinstance(content, dict):
-                summary = str(content.get("content") or "").strip()
-                citations_candidates = []
+    if isinstance(payload, dict):
+        choices = payload.get("choices")
+        if isinstance(choices, list) and choices:
+            first_choice = choices[0] or {}
+            message_block = first_choice.get("message") if isinstance(first_choice, dict) else None
+            if isinstance(message_block, dict):
+                summary = str(message_block.get("content") or "").strip()
                 for key in ("citations", "references", "context", "sources"):
-                    value = content.get(key)
+                    value = message_block.get(key)
                     if isinstance(value, list):
                         citations_candidates.extend(value)
-            else:
-                summary = str(message.get("content") or "").strip()
-                citations_candidates = []
-        else:
-            citations_candidates = []
-    else:
-        citations_candidates = []
+            elif isinstance(first_choice, dict):
+                summary = str(first_choice.get("content") or "").strip()
 
-    if not summary and isinstance(payload, dict):
-        summary = str(payload.get("summary") or "").strip()
+        if not summary:
+            summary = str(payload.get("summary") or "").strip()
 
-    additional_keys = ("citations", "references", "context", "results", "data", "sources")
-    for key in additional_keys:
-        value = payload.get(key) if isinstance(payload, dict) else None
-        if isinstance(value, list):
-            citations_candidates.extend(value)
+        for key in ("citations", "references", "context", "results", "data", "sources"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                citations_candidates.extend(value)
 
     seen_urls = set()
     for item in citations_candidates:
         if not isinstance(item, dict):
             continue
+
         url = str(
             item.get("url")
             or item.get("source")
@@ -179,6 +176,7 @@ def _format_perplexity_response(payload: Dict[str, Any]) -> Dict[str, Any]:
         ).strip()
         if not url or url in seen_urls:
             continue
+
         title = str(
             item.get("title")
             or item.get("name")
@@ -192,10 +190,12 @@ def _format_perplexity_response(payload: Dict[str, Any]) -> Dict[str, Any]:
             or item.get("description")
             or ""
         ).strip()
+
         result_entry: Dict[str, Any] = {"title": title or url, "url": url, "snippet": snippet}
         similarity = item.get("similarity") or item.get("score") or item.get("similarity_score")
         if isinstance(similarity, (int, float)):
             result_entry["similarity"] = float(similarity)
+
         results.append(result_entry)
         seen_urls.add(url)
 

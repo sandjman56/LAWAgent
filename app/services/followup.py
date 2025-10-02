@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping, Sequence
 
 from openai import (
     APIConnectionError,
@@ -21,32 +22,95 @@ _client = AsyncOpenAI(api_key=settings.openai_api_key)
 
 _SYSTEM_PROMPT = (
     "You are LAWAgent's conversational follow-up assistant. "
-    "Use the supplied issue spotter analysis to answer questions clearly, "
-    "empathetically, and with practical legal insight. Reference the context when useful."
+    "Use the supplied issue spotter analysis, operator instructions, document excerpts, and conversation "
+    "history to answer questions clearly, empathetically, and with practical legal insight. "
+    "Reference the context when useful and keep replies conversational."
 )
 
 
-async def answer_followup(question: str, context: str) -> str:
+async def answer_followup(
+    question: str,
+    context: str,
+    instruction: str | None = None,
+    document: str | None = None,
+    history: Sequence[Mapping[str, str] | object] | None = None,
+) -> str:
     clean_question = (question or "").strip()
     clean_context = (context or "").strip()
+    clean_instruction = (instruction or "").strip()
+    clean_document = (document or "").strip()
 
     if not clean_question:
         raise ValueError("Follow-up question is required.")
     if not clean_context:
         raise ValueError("Analysis context is required for follow-up answers.")
 
+    sanitized_history: list[dict[str, str]] = []
+    if history:
+        for entry in history:
+            role_value = ""
+            content_value = ""
+            if isinstance(entry, Mapping):
+                role_value = str(entry.get("role", ""))
+                content_value = str(entry.get("content", ""))
+            else:  # pragma: no cover - defensive
+                role_value = str(getattr(entry, "role", ""))
+                content_value = str(getattr(entry, "content", ""))
+
+            role = role_value.strip().lower()
+            content = content_value.strip()
+            if not content:
+                continue
+            if role not in {"assistant", "user", "system"}:
+                role = "assistant" if role == "lawagent" else "user"
+            if role == "system":
+                role = "assistant"
+            sanitized_history.append({"role": role, "content": content})
+
+    if sanitized_history:
+        sanitized_history = sanitized_history[-12:]
+
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {
-            "role": "user",
+            "role": "system",
             "content": (
-                "Here is the prior issue spotter analysis for context:\n"
-                f"{clean_context}\n\n"
-                "Answer the user's follow-up question in a conversational, explanatory tone:\n"
-                f"{clean_question}"
+                "Issue Spotter analysis context (summary, findings, citations, raw JSON):\n"
+                f"{clean_context}"
             ),
         },
     ]
+
+    if clean_instruction:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Operator instructions and preferences provided for the analysis:\n"
+                    f"{clean_instruction}"
+                ),
+            }
+        )
+
+    if clean_document:
+        messages.append(
+            {
+                "role": "system",
+                "content": (
+                    "Original document text or description supplied with the analysis:\n"
+                    f"{clean_document}"
+                ),
+            }
+        )
+
+    messages.extend(sanitized_history)
+
+    user_prompt = (
+        "Using the analysis, instructions, and document context above, answer this follow-up question "
+        "in a conversational tone. Reference relevant insights when helpful and clarify next steps:\n"
+        f"{clean_question}"
+    )
+    messages.append({"role": "user", "content": user_prompt})
 
     try:
         completion = await _client.chat.completions.create(

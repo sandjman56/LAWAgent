@@ -149,21 +149,24 @@
             </div>
 
             <div class="followup-section" aria-live="polite">
-              <div class="field-group">
-                <label for="followupInput">Follow-up Questions (optional)</label>
+              <div class="field-group followup-field">
+                <label for="followup-textarea">Follow-up Questions (optional)</label>
                 <textarea
-                  id="followupInput"
+                  id="followup-textarea"
                   name="followup"
                   rows="5"
                   placeholder="Ask for clarifications, more detail, or next steps based on the analysis."
                 ></textarea>
                 <p class="field-help">LAWAgent will answer conversationally using the latest analysis as context.</p>
+                <p id="followupError" class="form-error" role="alert" aria-live="polite" hidden></p>
               </div>
               <div class="followup-actions">
-                <button class="btn secondary" type="button" id="followupBtn">Ask Follow-up</button>
+                <button class="btn primary" type="button" id="ask-followup-btn">
+                  <span class="btn-label">Ask Follow-up</span>
+                  <span class="btn-progress" aria-hidden="true"></span>
+                </button>
               </div>
-              <p id="followupError" class="form-error" role="alert" aria-live="polite" hidden></p>
-              <div id="followupConversation" class="followup-conversation" aria-live="polite"></div>
+              <div id="followup-chat" class="followup-chat" aria-live="polite"></div>
             </div>
           </div>
         </div>

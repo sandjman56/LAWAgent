@@ -16,7 +16,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field, field_validator
 
 from app.config import settings
-from app.routers import health, issue_spotter
+from app.routers import followup, health, issue_spotter
 from app.routers.witness_finder import router as witness_finder_router
 
 app = FastAPI(title="LAWAgent")
@@ -81,6 +81,7 @@ app.add_middleware(
 )
 
 app.include_router(issue_spotter.router, prefix="/api/issue-spotter", tags=["Issue Spotter"])
+app.include_router(followup.router, prefix="/api/followup", tags=["Follow-up"])
 app.include_router(witness_finder_router)
 app.include_router(health.router, prefix="/api/health", tags=["Health"])
 app.mount("/", StaticFiles(directory="app/static", html=True), name="static")

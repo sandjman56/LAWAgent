@@ -17,11 +17,23 @@
     const citationsOutput = document.getElementById('citationsOutput');
     const jsonOutput = document.getElementById('jsonOutput');
 
+    const followupInput = document.getElementById('followupInput');
+    const followupBtn = document.getElementById('followupBtn');
+    const followupError = document.getElementById('followupError');
+    const followupConversation = document.getElementById('followupConversation');
+
+    let latestAnalysisData = null;
+
     const tabGroupId = 'results';
+
+    if (followupBtn) {
+      followupBtn.addEventListener('click', handleFollowupRequest);
+    }
 
     form.addEventListener('submit', async (event) => {
       event.preventDefault();
       clearError();
+      clearFollowupError();
 
       const hasFile = fileInput.files && fileInput.files.length > 0;
       const textValue = textInput.value.trim();
@@ -104,6 +116,14 @@
 
     function renderResults(data, { wantsJson }) {
       const { summary, findings, citations, raw_json: rawJson } = data;
+      latestAnalysisData = {
+        summary: typeof summary === 'string' ? summary : '',
+        findings: Array.isArray(findings) ? findings : [],
+        citations: Array.isArray(citations) ? citations : [],
+        raw_json: rawJson ?? null,
+      };
+      resetFollowupConversation();
+      clearFollowupError();
       summaryOutput.textContent = (summary && summary.trim()) || 'No summary provided.';
 
       renderFindings(Array.isArray(findings) ? findings : []);
@@ -183,6 +203,84 @@
       });
     }
 
+    async function handleFollowupRequest() {
+      if (!followupInput) return;
+      clearFollowupError();
+
+      const question = followupInput.value.trim();
+      if (!question) {
+        showFollowupError('Enter a follow-up question.');
+        followupInput.focus();
+        return;
+      }
+
+      if (!latestAnalysisData) {
+        showFollowupError('Run an analysis before asking a follow-up question.');
+        return;
+      }
+
+      setFollowupLoading(true);
+
+      try {
+        const payload = {
+          question,
+          context: buildFollowupContext(latestAnalysisData),
+        };
+
+        if (!payload.context.trim()) {
+          showFollowupError('Analysis context is unavailable. Please rerun the analysis.');
+          return;
+        }
+
+        const response = await fetch('/api/followup', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+          const errorPayload = await safeJson(response);
+          const detail = errorPayload?.detail || 'Unable to process the follow-up question.';
+          throw new Error(detail);
+        }
+
+        const data = await response.json();
+        const answer = typeof data.answer === 'string' ? data.answer.trim() : '';
+
+        if (!answer) {
+          showFollowupError('The AI did not return an answer. Please try again.');
+          return;
+        }
+
+        appendFollowupExchange(question, answer);
+        followupInput.value = '';
+        followupInput.focus();
+      } catch (error) {
+        console.error(error);
+        showFollowupError(error.message || 'Unable to process the follow-up question.');
+      } finally {
+        setFollowupLoading(false);
+      }
+    }
+
+    function appendFollowupExchange(question, answer) {
+      if (!followupConversation) return;
+      const exchange = document.createElement('div');
+      exchange.className = 'followup-exchange';
+
+      const questionEl = document.createElement('div');
+      questionEl.className = 'followup-question';
+      questionEl.textContent = question;
+      exchange.appendChild(questionEl);
+
+      const answerEl = document.createElement('div');
+      answerEl.className = 'followup-answer';
+      answerEl.textContent = answer;
+      exchange.appendChild(answerEl);
+
+      followupConversation.appendChild(exchange);
+    }
+
     function updateStatus(message) {
       if (statusEl) {
         statusEl.textContent = message;
@@ -199,6 +297,16 @@
       }
     }
 
+    function setFollowupLoading(isLoading) {
+      if (!followupBtn) return;
+      followupBtn.disabled = isLoading;
+      if (isLoading) {
+        followupBtn.setAttribute('aria-busy', 'true');
+      } else {
+        followupBtn.removeAttribute('aria-busy');
+      }
+    }
+
     function showError(message) {
       if (!errorEl) return;
       errorEl.textContent = message;
@@ -209,6 +317,41 @@
       if (!errorEl) return;
       errorEl.textContent = '';
       errorEl.hidden = true;
+    }
+
+    function showFollowupError(message) {
+      if (!followupError) return;
+      followupError.textContent = message;
+      followupError.hidden = false;
+    }
+
+    function clearFollowupError() {
+      if (!followupError) return;
+      followupError.textContent = '';
+      followupError.hidden = true;
+    }
+
+    function resetFollowupConversation() {
+      if (!followupConversation) return;
+      followupConversation.innerHTML = '';
+    }
+
+    function buildFollowupContext(result) {
+      try {
+        return JSON.stringify(
+          {
+            summary: result.summary || '',
+            findings: Array.isArray(result.findings) ? result.findings : [],
+            citations: Array.isArray(result.citations) ? result.citations : [],
+            raw_json: result.raw_json ?? null,
+          },
+          null,
+          2
+        );
+      } catch (error) {
+        console.error('Failed to build follow-up context', error);
+        return '';
+      }
     }
 
     async function safeJson(response) {
